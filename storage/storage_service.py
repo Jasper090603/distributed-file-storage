@@ -5,17 +5,21 @@ NODES = ["storage_nodes/node1",
          "storage_nodes/node2",
          "storage_nodes/node3"]
 
-def get_node_for_chunk():
-    return random.choice(NODES)
+REPLICATION_FACTOR = 2
+
+def get_nodes_for_replication():
+    return random.sample(NODES, REPLICATION_FACTOR)
 
 def save_chunk(chunk_data, chunk_name):
-    node = get_node_for_chunk()
+    selected_nodes = get_nodes_for_replication()
 
-    os.makedirs(node, exist_ok=True)
+    for node in selected_nodes:
 
-    chunk_path = os.path.join(node, chunk_name)
+        os.makedirs(node, exist_ok=True)
 
-    with open(chunk_path, "wb") as f:
-        f.write(chunk_data)
+        chunk_path = os.path.join(node, chunk_name)
 
-    return node, chunk_name
+        with open(chunk_path, "wb") as f:
+            f.write(chunk_data)
+
+    return selected_nodes, chunk_name

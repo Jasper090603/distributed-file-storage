@@ -17,4 +17,4 @@ class Chunk(Base):
     file_id = Column(String, ForeignKey("files.id"))
     chunk_name = Column(String)
     chunk_order = Column(Integer)
-    node = Column(String)
+    nodes = Column(String)

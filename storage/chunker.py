@@ -20,7 +20,7 @@ def split_file(file_path):              #we create a function definition which t
             chunk_name = f"{file_id}_chunk_{chunk_number}"      # we create the chunk name with file id and chunk number ex. abc123_chunk_0
             # chunk_path = f"storage_nodes/{chunk_name}"          #Define the path of the chunk which is stored in storage_nodes/{chunk_name}
 
-            node, saved_chunk = save_chunk(chunk, chunk_name)
+            nodes, saved_chunk = save_chunk(chunk, chunk_name)
 
 
 
@@ -30,7 +30,7 @@ def split_file(file_path):              #we create a function definition which t
 
             chunks.append({
                 "chunk_name": saved_chunk,
-                "node": node,
+                "nodes": nodes,
                 "order": chunk_number
                 })                                              #Adding chunk name to the list
             chunk_number += 1                                   #Increment the chunk counter

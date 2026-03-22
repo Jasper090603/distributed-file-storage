@@ -44,7 +44,7 @@ async def upload_file(file: UploadFile = File(...)):        #Asynchronous functi
           file_id = file_id,
           chunk_name = chunk["chunk_name"],
           chunk_order = chunk["order"],
-          node = chunk["node"]
+          nodes = ",".join(chunk["nodes"])
        )
        db.add(db_chunk)
 

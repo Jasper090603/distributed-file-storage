@@ -43,15 +43,25 @@ def download_file(file_id: str):                                    #file_id -->
 
     with open(output_file, "wb") as outfile:                        #Opening the output file
         for chunk in chunks:                                        #Looping through the chunks
-            chunk_path = os.path.join(chunk.node, chunk.chunk_name) #Open chunk file in binary read mode
-            if not os.path.exists(chunk_path):                        #Merging the chunks, all chunks will be combined and original file will be restored
-                db.close()
-                raise HTTPException(status_code=500, detail=f"Missing chunk: {chunk.chunk_name}")
+            # chunk_path = os.path.join(chunk.node, chunk.chunk_name) #Open chunk file in binary read mode
+            nodes = chunk.nodes.split(",")
 
-            with open(chunk_path, "rb") as infile:
-                outfile.write(infile.read())
+            chunk_found = False
+
+            for node in nodes:
+                chunk_path = os.path.join(node, chunk.chunk_name)
+
+                if os.path.exists(chunk_path):                        #Merging the chunks, all chunks will be combined and original file will be restored
+                    with open(chunk_path, "rb") as infile:
+                        outfile.write(infile.read())
+                    chunk_found = True
+                    break
+                   
+
+            if not chunk_found:
+                raise HTTPException(status_code=500, detail=f"Missing chunk: {chunk.chunk_name}")
+                return {"error": f"Chunk missing: {chunk.chunk_name}"} 
 
     db.close()
-
-
+    
     return FileResponse(output_file, filename=db_file.name)    #At the end return the output file
