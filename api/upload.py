@@ -36,17 +36,20 @@ async def upload_file(file: UploadFile = File(...)):        #Asynchronous functi
     )
 
     db.add(db_file)
+    db.commit()
 
 
-    for index, chunk in enumerate(chunks):
+    for chunk in chunks:
        db_chunk = Chunk(
           file_id = file_id,
-          chunk_name = chunk,
-          chunk_order = index
+          chunk_name = chunk["chunk_name"],
+          chunk_order = chunk["order"],
+          node = chunk["node"]
        )
+       db.add(db_chunk)
 
-       db.commit
-       db.close
+    db.commit()
+    db.close()
 
     os.remove(temp_path)                                    #Delete temp file after chunking 
 
