@@ -1,9 +1,12 @@
 import os 
 import random
+import requests
 
-NODES = ["storage_nodes/node1",
-         "storage_nodes/node2",
-         "storage_nodes/node3"]
+NODES = [
+    "http://localhost:8001",
+    "http://localhost:8002",
+    "http://localhost:8003"
+         ]
 
 REPLICATION_FACTOR = 2
 
@@ -15,11 +18,16 @@ def save_chunk(chunk_data, chunk_name):
 
     for node in selected_nodes:
 
-        os.makedirs(node, exist_ok=True)
+        files = {"file": (chunk_name, chunk_data)}
 
-        chunk_path = os.path.join(node, chunk_name)
+        response = requests.post(f"{node}/store_chunk", files=files)
 
-        with open(chunk_path, "wb") as f:
-            f.write(chunk_data)
+        if response.status_code != 200:
+            print(f"Failed to store chunk in {node}")
+
+        # chunk_path = os.path.join(node, chunk_name)
+
+        # with open(chunk_path, "wb") as f:
+        #     f.write(chunk_data)
 
     return selected_nodes, chunk_name

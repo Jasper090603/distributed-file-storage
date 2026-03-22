@@ -3,6 +3,7 @@ from fastapi.responses import FileResponse
 from metadata.database import SessionLocal
 from metadata.models import Chunk, File as DBFile
 import os
+import requests
 
 router = APIRouter()                                                #Creates route group for download APIs
 
@@ -49,11 +50,12 @@ def download_file(file_id: str):                                    #file_id -->
             chunk_found = False
 
             for node in nodes:
-                chunk_path = os.path.join(node, chunk.chunk_name)
+                # chunk_path = os.path.join(node, chunk.chunk_name)
+                response = requests.get(f"{node}/get_chunk/{chunk.chunk_name}")
 
-                if os.path.exists(chunk_path):                        #Merging the chunks, all chunks will be combined and original file will be restored
-                    with open(chunk_path, "rb") as infile:
-                        outfile.write(infile.read())
+                if response.status_code == 200:                       #Merging the chunks, all chunks will be combined and original file will be restored
+                    outfile.write(response.content)
+
                     chunk_found = True
                     break
                    
