@@ -1,7 +1,10 @@
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, HTTPException, File
 from fastapi.responses import FileResponse
 import os
 import shutil
+import logging
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
@@ -13,6 +16,8 @@ os.makedirs(STORAGE_PATH, exist_ok=True)
 async def store_chunk(file: UploadFile = File(...)):
     file_path = os.path.join(STORAGE_PATH, file.filename)
 
+    logger.info(f"Storing chunk: {file.filename}")
+
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
@@ -23,6 +28,18 @@ def get_chunk(chunk_name: str):
     file_path = os.path.join(STORAGE_PATH, chunk_name)
 
     if not os.path.exists(file_path):
-        return {"error": "Chunk not found"}
+        logger.error(f"Chunk not found: {chunk_name}")
+        raise HTTPException(status_code=404, detail="Chunk not found")
 
-    return FileResponse(file_path, media_type="application/octet-stream")
+    logger.info(f"Serving chunk: {chunk_name}")
+    
+    return FileResponse(
+        path=file_path,
+        filename=chunk_name,
+        media_type="application/octet-stream"
+    )
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}

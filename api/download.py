@@ -1,16 +1,69 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 from metadata.database import SessionLocal
 from metadata.models import Chunk, File as DBFile
-import os
+from concurrent.futures import ThreadPoolExecutor
+from config import MAX_RETRIES, TIMEOUT
 import requests
+import time
+import logging
+import os
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()                                                #Creates route group for download APIs
 
-@router.get("/download")                                            #Define the endpoint
-def download_file(file_id: str):                                    #file_id --> query parameter from URL, :str --> type hint (string) example request http://127.0.0.1:8000/download?file_id=129e5d9f...
 
-    os.makedirs("temp", exist_ok=True)
+def is_node_healthy(node):
+    try:
+        response = requests.get(f"{node}/health", timeout=TIMEOUT)
+        return response.status_code == 200
+    except:
+        return False
+
+
+def fetch_chunk_data(chunk):
+    nodes = chunk.nodes.split(",")
+
+    healthy_nodes = [node for node in nodes if is_node_healthy(node)]
+
+    if not healthy_nodes:
+        logger.warning("All nodes marked unhealthy, falling back to all nodes")
+        healthy_nodes = nodes
+
+    # MAX_RETRIES = 3               Shifted to config file
+
+    for node in healthy_nodes:
+        for attempt in range(MAX_RETRIES):
+            try:
+                response = requests.get(
+                    f"{node}/get_chunk/{chunk.chunk_name}",
+                    stream=True,
+                    timeout=TIMEOUT
+                )
+                logger.info(f"Fetching chunk: {chunk.chunk_name}")
+
+                if response.status_code == 200:
+                    return response.content
+
+            except Exception as e:
+                logger.exception(f"Retry {attempt+1} failed for {node}: {e}")
+            
+            time.sleep(0.5 * (attempt + 1))
+
+    return None
+
+
+def delete_file(path: str):
+    try:
+        os.remove(path)
+        print(f"Deleted temp file: {path}")
+    except Exception as e:
+        print(f"Error deleting file: {e}")
+
+
+@router.get("/download")                                            #Define the endpoint
+def download_file(file_id: str, background_tasks: BackgroundTasks): #file_id --> query parameter from URL, :str --> type hint (string) example request http://127.0.0.1:8000/download?file_id=129e5d9f...
 
     db = SessionLocal()
 
@@ -42,28 +95,30 @@ def download_file(file_id: str):                                    #file_id -->
 
     output_file = f"temp/{file_id}_reconstructed"                   #Reconstructed file will be saved as temp/abc123_reconstructed
 
-    with open(output_file, "wb") as outfile:                        #Opening the output file
-        for chunk in chunks:                                        #Looping through the chunks
-            # chunk_path = os.path.join(chunk.node, chunk.chunk_name) #Open chunk file in binary read mode
-            nodes = chunk.nodes.split(",")
+    # ✅ Fetch all chunks in parallel
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        results = list(executor.map(fetch_chunk_data, chunks))      #Downloads multiple chunks at same time
 
-            chunk_found = False
+    # ✅ Write chunks in order
+    with open(output_file, "wb") as outfile:
+        for i, data in enumerate(results):                      #Maintains correct file order
+            if data is None:
+                db.close()
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Missing chunk: {chunks[i].chunk_name}"
+                )
 
-            for node in nodes:
-                # chunk_path = os.path.join(node, chunk.chunk_name)
-                response = requests.get(f"{node}/get_chunk/{chunk.chunk_name}")
-
-                if response.status_code == 200:                       #Merging the chunks, all chunks will be combined and original file will be restored
-                    outfile.write(response.content)
-
-                    chunk_found = True
-                    break
-                   
-
-            if not chunk_found:
-                raise HTTPException(status_code=500, detail=f"Missing chunk: {chunk.chunk_name}")
-                return {"error": f"Chunk missing: {chunk.chunk_name}"} 
-
+            outfile.write(data)
     db.close()
+
+    background_tasks.add_task(delete_file, output_file)
+
+    # Return reconstructed file
+    return FileResponse(
+        output_file,
+        filename=db_file.name,
+        media_type="application/octet-stream"
+    )
     
-    return FileResponse(output_file, filename=db_file.name)    #At the end return the output file
+   

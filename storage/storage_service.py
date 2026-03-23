@@ -1,14 +1,18 @@
 import os 
 import random
 import requests
+from config import NODES, REPLICATION_FACTOR
+import logging
 
-NODES = [
-    "http://localhost:8001",
-    "http://localhost:8002",
-    "http://localhost:8003"
-         ]
+logger = logging.getLogger(__name__)
 
-REPLICATION_FACTOR = 2
+# NODES = [                             Shifted to config.py file
+#     "http://localhost:8001",
+#     "http://localhost:8002",
+#     "http://localhost:8003"
+#          ]
+
+# REPLICATION_FACTOR = 2                Shifted to config.py file
 
 def get_nodes_for_replication():
     return random.sample(NODES, REPLICATION_FACTOR)
@@ -23,11 +27,12 @@ def save_chunk(chunk_data, chunk_name):
         response = requests.post(f"{node}/store_chunk", files=files)
 
         if response.status_code != 200:
-            print(f"Failed to store chunk in {node}")
+            logger.error(f"Failed to store chunk in {node}")
 
         # chunk_path = os.path.join(node, chunk_name)
 
         # with open(chunk_path, "wb") as f:
         #     f.write(chunk_data)
 
+    
     return selected_nodes, chunk_name

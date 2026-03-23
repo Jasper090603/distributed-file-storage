@@ -3,6 +3,12 @@ from contextlib import asynccontextmanager
 from metadata.database import engine, Base
 from metadata import models 
 from api import upload, download
+from logger_config import setup_logger
+import logging
+
+
+setup_logger()
+logger = logging.getLogger(__name__)
 
 
 app = FastAPI()
