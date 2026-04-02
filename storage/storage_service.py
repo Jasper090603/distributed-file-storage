@@ -1,8 +1,10 @@
-import os 
 import random
 import requests
+from storage.consistent_hash import ConsistentHashRing
 from config import NODES, REPLICATION_FACTOR
 import logging
+
+hash_ring = ConsistentHashRing(NODES)
 
 logger = logging.getLogger(__name__)
 
@@ -14,11 +16,9 @@ logger = logging.getLogger(__name__)
 
 # REPLICATION_FACTOR = 2                Shifted to config.py file
 
-def get_nodes_for_replication():
-    return random.sample(NODES, REPLICATION_FACTOR)
 
 def save_chunk(chunk_data, chunk_name):
-    selected_nodes = get_nodes_for_replication()
+    selected_nodes = hash_ring.get_nodes(chunk_name, REPLICATION_FACTOR)
 
     for node in selected_nodes:
 
