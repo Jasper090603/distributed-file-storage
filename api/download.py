@@ -1,13 +1,14 @@
 from fastapi import APIRouter, HTTPException, BackgroundTasks
-from fastapi.responses import FileResponse
+from fastapi.responses import StreamingResponse
 from metadata.database import SessionLocal
 from metadata.models import Chunk, File as DBFile
-from concurrent.futures import ThreadPoolExecutor
 from config import MAX_RETRIES, TIMEOUT
+from concurrent.futures import ThreadPoolExecutor
+import threading
+import time
 import requests
 import time
 import logging
-import os
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,61 @@ def is_node_healthy(node):
         return response.status_code == 200
     except:
         return False
+
+
+def stream_file_parallel(chunks):
+
+    results = {}                 # buffer: {index: data}
+    lock = threading.Lock()
+    next_chunk = 0
+    total_chunks = len(chunks)
+
+    def fetch_chunk(index, chunk):
+        nodes = chunk.nodes.split(",")
+
+        for node in nodes:
+            try:
+                response = requests.get(
+                    f"{node}/get_chunk/{chunk.chunk_name}",
+                    stream=True,
+                    timeout=5
+                )
+
+                if response.status_code == 200:
+                    data = b''.join(response.iter_content(8192))
+
+                    with lock:
+                        results[index] = data
+                    return
+
+            except Exception as e:
+                print(f"Fetch failed for {chunk.chunk_name} from {node}: {e}")
+                continue
+
+        # mark failure
+        with lock:
+            results[index] = None
+
+    # Start parallel fetching
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        for i, chunk in enumerate(chunks):
+            executor.submit(fetch_chunk, i, chunk)
+
+        # Streaming loop (ordered)
+        while next_chunk < total_chunks:
+
+            with lock:
+                if next_chunk in results:
+                    data = results.pop(next_chunk)
+
+                    if data is None:
+                        raise Exception(f"Missing chunk: {chunks[next_chunk].chunk_name}")
+
+                    yield data
+                    next_chunk += 1
+                    continue
+
+            time.sleep(0.01)  # wait for next chunk
 
 
 def fetch_chunk_data(chunk):
@@ -54,14 +110,6 @@ def fetch_chunk_data(chunk):
     return None
 
 
-def delete_file(path: str):
-    try:
-        os.remove(path)
-        print(f"Deleted temp file: {path}")
-    except Exception as e:
-        print(f"Error deleting file: {e}")
-
-
 @router.get("/download")                                            #Define the endpoint
 def download_file(file_id: str, background_tasks: BackgroundTasks): #file_id --> query parameter from URL, :str --> type hint (string) example request http://127.0.0.1:8000/download?file_id=129e5d9f...
 
@@ -73,19 +121,12 @@ def download_file(file_id: str, background_tasks: BackgroundTasks): #file_id -->
         db.close()
         raise HTTPException(status_code=404, detail="File not found")
 
-    # chunks = sorted([                                               #returns the list of all files in folder
-    #     f for f in os.listdir("storage_nodes")                      #This filters only files that belong to this file for example if file_id is abc then --> ["abc_chunk_0", "abc_chunk_1"]
-    #     if f.startswith(file_id)
-    # ])
-
     #Getting the chunks in order
     chunks = db.query(Chunk)\
         .filter(Chunk.file_id == file_id)\
         .order_by(Chunk.chunk_order)\
         .all()
 
-    # if not chunks:                                                  #If no chunks are found then we return error message
-    #     return {"error": "File not found"}
 
     #if chunks not found then we close the db and return error chunks not found
     if not chunks:
@@ -93,32 +134,12 @@ def download_file(file_id: str, background_tasks: BackgroundTasks): #file_id -->
         raise HTTPException(status_code=404, detail="Chunks not found")
 
 
-    output_file = f"temp/{file_id}_reconstructed"                   #Reconstructed file will be saved as temp/abc123_reconstructed
-
-    # ✅ Fetch all chunks in parallel
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        results = list(executor.map(fetch_chunk_data, chunks))      #Downloads multiple chunks at same time
-
-    # ✅ Write chunks in order
-    with open(output_file, "wb") as outfile:
-        for i, data in enumerate(results):                      #Maintains correct file order
-            if data is None:
-                db.close()
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Missing chunk: {chunks[i].chunk_name}"
-                )
-
-            outfile.write(data)
-    db.close()
-
-    background_tasks.add_task(delete_file, output_file)
-
-    # Return reconstructed file
-    return FileResponse(
-        output_file,
-        filename=db_file.name,
-        media_type="application/octet-stream"
+    return StreamingResponse(
+        stream_file_parallel(chunks),
+        media_type="application/octet-stream",
+        headers={
+            "Content-Disposition": f"attachment; filename={db_file.name}"
+        }
     )
     
    

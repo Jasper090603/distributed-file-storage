@@ -1,0 +1,6 @@
+Activating Virtual Environment
+venv\Scripts\activate
+
+Running Server
+uvicorn main:app --reload
+
